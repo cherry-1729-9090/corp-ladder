@@ -42,6 +42,20 @@ type AddPersonForm = {
   unit: string;
 };
 
+type QueryKind =
+  | "manager-chain"
+  | "subtree"
+  | "kth-ancestor"
+  | "lowest-common-manager"
+  | "distance"
+  | "path"
+  | "is-ancestor";
+
+type QueryResult = {
+  title: string;
+  lines: string[];
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 1.75;
@@ -52,6 +66,16 @@ const EMPTY_FORM: AddPersonForm = {
   title: "",
   unit: "",
 };
+
+const QUERY_OPTIONS: { id: QueryKind; label: string }[] = [
+  { id: "manager-chain", label: "Manager chain" },
+  { id: "subtree", label: "Subtree" },
+  { id: "kth-ancestor", label: "K-th ancestor" },
+  { id: "lowest-common-manager", label: "Lowest common manager" },
+  { id: "distance", label: "Distance" },
+  { id: "path", label: "Path" },
+  { id: "is-ancestor", label: "Ancestor check" },
+];
 
 function slugify(value: string) {
   return value
@@ -104,6 +128,14 @@ function buildSelectedPath(nodeId: string | null, nodeMap: Record<string, NodeSu
   }
 
   return ids;
+}
+
+function formatNodeInline(node: Pick<NodeSummary, "name" | "title"> | null | undefined) {
+  if (!node) {
+    return "None";
+  }
+
+  return `${node.name} (${node.title})`;
 }
 
 function clampZoom(value: number) {
@@ -202,6 +234,13 @@ export default function Home() {
   const [isPanning, setIsPanning] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [queryKind, setQueryKind] = useState<QueryKind>("manager-chain");
+  const [queryPrimaryNodeId, setQueryPrimaryNodeId] = useState<string | null>(null);
+  const [compareNodeId, setCompareNodeId] = useState<string | null>(null);
+  const [kValue, setKValue] = useState("1");
+  const [queryLoading, setQueryLoading] = useState(false);
+  const [queryError, setQueryError] = useState<string | null>(null);
+  const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const zoomRef = useRef(1);
   const suppressClickRef = useRef(false);
@@ -222,6 +261,25 @@ export default function Home() {
   const selectedPathIds = useMemo(
     () => buildSelectedPath(selectedNodeId, nodeMap),
     [nodeMap, selectedNodeId],
+  );
+  const queryPrimaryNode = queryPrimaryNodeId ? nodeMap[queryPrimaryNodeId] : null;
+  const allNodeOptions = useMemo(
+    () =>
+      (snapshot?.nodes ?? []).map((node) => ({
+        id: node.id,
+        label: `${node.name} - ${node.title}`,
+      })),
+    [snapshot],
+  );
+  const compareNodeOptions = useMemo(
+    () =>
+      (snapshot?.nodes ?? [])
+        .filter((node) => node.id !== queryPrimaryNodeId)
+        .map((node) => ({
+          id: node.id,
+          label: `${node.name} - ${node.title}`,
+        })),
+    [queryPrimaryNodeId, snapshot],
   );
 
   async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -257,6 +315,33 @@ export default function Home() {
   useEffect(() => {
     zoomRef.current = zoom;
   }, [zoom]);
+
+  useEffect(() => {
+    if (!selectedNodeId) {
+      return;
+    }
+
+    setQueryPrimaryNodeId((current) => current ?? selectedNodeId);
+  }, [selectedNodeId]);
+
+  useEffect(() => {
+    if (!compareNodeOptions.length) {
+      setCompareNodeId(null);
+      return;
+    }
+
+    setCompareNodeId((current) => {
+      if (current && compareNodeOptions.some((option) => option.id === current)) {
+        return current;
+      }
+      return compareNodeOptions[0]?.id ?? null;
+    });
+  }, [compareNodeOptions]);
+
+  useEffect(() => {
+    setQueryError(null);
+    setQueryResult(null);
+  }, [queryKind, queryPrimaryNodeId, compareNodeId, kValue]);
 
   useEffect(() => {
     if (!snapshot || !viewportRef.current) {
@@ -453,21 +538,281 @@ export default function Home() {
     }
   }
 
+  async function handleRunQuery() {
+    if (!queryPrimaryNode) {
+      return;
+    }
+
+    setQueryLoading(true);
+    setQueryError(null);
+
+    try {
+      let nextResult: QueryResult | null = null;
+
+      switch (queryKind) {
+        case "manager-chain": {
+          const payload = await request<{
+            employee: NodeSummary;
+            chain: NodeSummary[];
+          }>(`/queries/manager-chain/${queryPrimaryNode.id}`);
+          nextResult = {
+            title: "Manager chain",
+            lines:
+              payload.chain.length > 0
+                ? [
+                    `From closest manager upward: ${payload.chain
+                      .map((node) => node.name)
+                      .join(" -> ")}`,
+                  ]
+                : [`${queryPrimaryNode.name} is the root node, so no managers are above it.`],
+          };
+          break;
+        }
+        case "subtree": {
+          const payload = await request<{
+            root: NodeSummary;
+            members: NodeSummary[];
+            size: number;
+          }>(`/queries/subtree/${queryPrimaryNode.id}`);
+          nextResult = {
+            title: "Subtree",
+            lines: [
+              `Subtree size: ${payload.size}`,
+              `Members in Euler Tour order: ${payload.members.map((node) => node.name).join(" -> ")}`,
+            ],
+          };
+          break;
+        }
+        case "kth-ancestor": {
+          const k = Number.parseInt(kValue, 10);
+          if (Number.isNaN(k) || k < 0) {
+            throw new Error("Enter a valid non-negative k value.");
+          }
+
+          const payload = await request<{
+            node: NodeSummary;
+            k: number;
+            ancestor: NodeSummary | null;
+          }>(`/queries/kth-ancestor?nodeId=${queryPrimaryNode.id}&k=${k}`);
+          nextResult = {
+            title: "K-th ancestor",
+            lines: [
+              payload.ancestor
+                ? `${k} jump(s) above ${queryPrimaryNode.name}: ${formatNodeInline(payload.ancestor)}`
+                : `${k} jump(s) above ${queryPrimaryNode.name}: no ancestor exists at that level.`,
+            ],
+          };
+          break;
+        }
+        case "lowest-common-manager": {
+          if (!compareNodeId) {
+            throw new Error("Pick a second node for this query.");
+          }
+
+          const payload = await request<{
+            first: NodeSummary;
+            second: NodeSummary;
+            manager: NodeSummary;
+          }>(`/queries/lowest-common-manager?firstId=${queryPrimaryNode.id}&secondId=${compareNodeId}`);
+          nextResult = {
+            title: "Lowest common manager",
+            lines: [
+              `${payload.first.name} and ${payload.second.name} meet at ${formatNodeInline(payload.manager)}.`,
+            ],
+          };
+          break;
+        }
+        case "distance": {
+          if (!compareNodeId) {
+            throw new Error("Pick a second node for this query.");
+          }
+
+          const payload = await request<{
+            first: NodeSummary;
+            second: NodeSummary;
+            edges: number;
+          }>(`/queries/distance?firstId=${queryPrimaryNode.id}&secondId=${compareNodeId}`);
+          nextResult = {
+            title: "Distance",
+            lines: [
+              `${payload.first.name} to ${payload.second.name}: ${payload.edges} edge(s) apart.`,
+            ],
+          };
+          break;
+        }
+        case "path": {
+          if (!compareNodeId) {
+            throw new Error("Pick a second node for this query.");
+          }
+
+          const payload = await request<{
+            first: NodeSummary;
+            second: NodeSummary;
+            path: NodeSummary[];
+            hops: number;
+          }>(`/queries/path?firstId=${queryPrimaryNode.id}&secondId=${compareNodeId}`);
+          nextResult = {
+            title: "Path",
+            lines: [
+              `Hop count: ${payload.hops}`,
+              `Path: ${payload.path.map((node) => node.name).join(" -> ")}`,
+            ],
+          };
+          break;
+        }
+        case "is-ancestor": {
+          if (!compareNodeId) {
+            throw new Error("Pick a second node for this query.");
+          }
+
+          const payload = await request<{
+            ancestor: NodeSummary;
+            node: NodeSummary;
+            result: boolean;
+          }>(`/queries/is-ancestor?ancestorId=${queryPrimaryNode.id}&nodeId=${compareNodeId}`);
+          nextResult = {
+            title: "Ancestor check",
+            lines: [
+              payload.result
+                ? `${payload.ancestor.name} is an ancestor of ${payload.node.name}.`
+                : `${payload.ancestor.name} is not an ancestor of ${payload.node.name}.`,
+              `Euler interval test: [${payload.ancestor.tin}, ${payload.ancestor.tout}] vs [${payload.node.tin}, ${payload.node.tout}]`,
+            ],
+          };
+          break;
+        }
+      }
+
+      setQueryResult(nextResult);
+    } catch (error) {
+      setQueryResult(null);
+      setQueryError(error instanceof Error ? error.message : "Unable to run the query.");
+    } finally {
+      setQueryLoading(false);
+    }
+  }
+
+  const queryNeedsSecondNode =
+    queryKind === "lowest-common-manager" ||
+    queryKind === "distance" ||
+    queryKind === "path" ||
+    queryKind === "is-ancestor";
+  const queryFirstLabel = queryKind === "is-ancestor" ? "Ancestor node" : "First node";
+  const querySecondLabel =
+    queryKind === "is-ancestor"
+      ? "Descendant node"
+      : queryKind === "lowest-common-manager"
+        ? "Second node"
+        : queryKind === "distance"
+          ? "Second node"
+          : queryKind === "path"
+            ? "Second node"
+            : "Second node";
+
+  const queryPanelContent = queryPrimaryNode ? (
+    <div className={styles.orgQueryPanel}>
+      <div className={styles.orgQueryPanelHead}>
+        <p className={styles.orgLabel}>Query lab</p>
+        <h2 className={styles.orgQueryPanelTitle}>Run tree queries</h2>
+        <p className={styles.orgQueryPanelCopy}>
+          Pick the exact node inputs for each query here, then add a second node or a k value only
+          when that query needs it.
+        </p>
+      </div>
+
+      <div className={styles.orgQueryPanelBody}>
+        <label className={styles.orgField}>
+          <span>{queryFirstLabel}</span>
+          <select
+            className={styles.orgSelect}
+            value={queryPrimaryNodeId ?? ""}
+            onChange={(event) => setQueryPrimaryNodeId(event.target.value)}
+          >
+            {allNodeOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className={styles.orgField}>
+          <span>Query type</span>
+          <select
+            className={styles.orgSelect}
+            value={queryKind}
+            onChange={(event) => setQueryKind(event.target.value as QueryKind)}
+          >
+            {QUERY_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {queryNeedsSecondNode ? (
+          <label className={styles.orgField}>
+            <span>{querySecondLabel}</span>
+            <select
+              className={styles.orgSelect}
+              value={compareNodeId ?? ""}
+              onChange={(event) => setCompareNodeId(event.target.value)}
+            >
+              {compareNodeOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        {queryKind === "kth-ancestor" ? (
+          <label className={styles.orgField}>
+            <span>K value</span>
+            <input
+              className={styles.orgInput}
+              inputMode="numeric"
+              value={kValue}
+              onChange={(event) => setKValue(event.target.value)}
+              placeholder="Enter 0, 1, 2..."
+            />
+          </label>
+        ) : null}
+
+        <button
+          type="button"
+          className={styles.orgQueryRun}
+          disabled={queryLoading}
+          onClick={handleRunQuery}
+        >
+          {queryLoading ? "Running..." : "Run query"}
+        </button>
+
+        {queryError ? <div className={styles.orgInlineError}>{queryError}</div> : null}
+
+        {queryResult ? (
+          <div className={styles.orgQueryResult}>
+            <strong>{queryResult.title}</strong>
+            {queryResult.lines.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+        ) : (
+          <div className={styles.orgQueryHint}>
+            Available queries: manager chain, subtree, k-th ancestor, lowest common manager,
+            distance, path, and ancestor check.
+          </div>
+        )}
+      </div>
+    </div>
+  ) : (
+    <div className={styles.orgEmpty}>Select a node to start running queries.</div>
+  );
+
   const sidebarContent = selectedNode ? (
     <div className={styles.orgPanel}>
-      <section className={styles.orgPanelHero}>
-        <p className={styles.orgLabel}>Selected node</p>
-        <h2 className={styles.orgSelectedName}>{selectedNode.name}</h2>
-        <p className={styles.orgSelectedRole}>{selectedNode.title}</p>
-        <div className={styles.orgChipRow}>
-          <span className={styles.orgChip}>{selectedNode.unit}</span>
-          <span className={styles.orgChip}>
-            {selectedNode.childrenIds.length} direct report
-            {selectedNode.childrenIds.length === 1 ? "" : "s"}
-          </span>
-        </div>
-      </section>
-
       <div className={styles.orgPanelBody}>
         <section className={styles.orgPanelSection}>
           <div className={styles.orgSectionHead}>
@@ -550,6 +895,8 @@ export default function Home() {
   return (
     <main className={styles.orgApp}>
       <div className={styles.orgLayout}>
+        <aside className={styles.orgQuerySidebar}>{queryPanelContent}</aside>
+
         <section className={styles.orgStage}>
           <header className={styles.orgStageHeader}>
             <div className={styles.orgStageIntro}>

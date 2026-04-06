@@ -45,6 +45,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  padding-left: 340px;
   padding-right: 420px;
   border-bottom: 1px solid rgba(16, 32, 25, 0.06);
   background:
@@ -61,6 +62,61 @@
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
+}
+
+.orgQuerySidebar {
+  position: absolute;
+  top: 88px;
+  left: 24px;
+  width: min(300px, calc(100vw - 120px));
+  max-height: calc(100vh - 136px);
+  z-index: 4;
+}
+
+.orgQueryPanel {
+  overflow: hidden;
+  border: 1px solid rgba(16, 32, 25, 0.08);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow:
+    0 24px 56px rgba(16, 32, 25, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.orgQueryPanelHead {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid rgba(16, 32, 25, 0.06);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 251, 246, 0.94)),
+    radial-gradient(circle at top left, rgba(74, 222, 128, 0.12), transparent 36%);
+}
+
+.orgQueryPanelTitle {
+  margin: 8px 0 0;
+  color: #102019;
+  font-size: 1.35rem;
+  line-height: 1.15;
+}
+
+.orgQueryPanelCopy {
+  margin: 8px 0 0;
+  color: rgba(16, 32, 25, 0.66);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.orgQueryPanelBody {
+  display: grid;
+  gap: 12px;
+  max-height: calc(100vh - 262px);
+  overflow: auto;
+  padding: 18px;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.orgQueryPanelBody::-webkit-scrollbar {
+  display: none;
 }
 
 .orgSidebar {
@@ -224,7 +280,7 @@
 .orgViewport {
   flex: 1;
   overflow: auto;
-  padding: 20px 400px 48px 28px;
+  padding: 20px 400px 48px 340px;
   cursor: grab;
   touch-action: none;
   user-select: none;
@@ -586,6 +642,26 @@
   line-height: 1.55;
 }
 
+.orgReadOnlyField {
+  display: grid;
+  gap: 2px;
+  border: 1px solid rgba(16, 32, 25, 0.08);
+  border-radius: 16px;
+  background: rgba(244, 250, 244, 0.94);
+  padding: 12px 14px;
+}
+
+.orgReadOnlyField strong {
+  color: #102019;
+  font-size: 0.94rem;
+}
+
+.orgReadOnlyField small {
+  color: rgba(16, 32, 25, 0.58);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
 .orgForm {
   display: flex;
   flex-direction: column;
@@ -615,7 +691,27 @@
     transform 180ms ease;
 }
 
+.orgSelect {
+  width: 100%;
+  border: 1px solid rgba(16, 32, 25, 0.12);
+  border-radius: 16px;
+  background: #f7fbf7;
+  padding: 12px 14px;
+  color: #102019;
+  outline: none;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
 .orgInput:focus {
+  border-color: rgba(61, 153, 48, 0.45);
+  box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.14);
+  transform: translateY(-1px);
+}
+
+.orgSelect:focus {
   border-color: rgba(61, 153, 48, 0.45);
   box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.14);
   transform: translateY(-1px);
@@ -629,6 +725,62 @@
   font-size: 0.86rem;
   line-height: 1.45;
   padding: 10px 12px;
+}
+
+.orgQueryRun {
+  border: 0;
+  border-radius: 16px;
+  background: #102019;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 800;
+  width: 100%;
+  padding: 12px 16px;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+.orgQueryRun:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(16, 32, 25, 0.12);
+}
+
+.orgQueryRun:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.orgQueryResult {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  border: 1px solid rgba(16, 32, 25, 0.08);
+  border-radius: 18px;
+  background: rgba(244, 250, 244, 0.9);
+  padding: 14px;
+}
+
+.orgQueryResult strong {
+  color: #102019;
+  font-size: 0.95rem;
+}
+
+.orgQueryResult p,
+.orgQueryHint {
+  margin: 0;
+  color: rgba(16, 32, 25, 0.7);
+  line-height: 1.55;
+}
+
+.orgQueryHint {
+  margin-top: 14px;
+  border: 1px dashed rgba(16, 32, 25, 0.14);
+  border-radius: 18px;
+  background: rgba(248, 251, 248, 0.82);
+  padding: 12px 14px;
 }
 
 .orgFormAction {
@@ -724,7 +876,18 @@
   }
 
   .orgStageHeader {
+    padding-left: 22px;
     padding-right: 22px;
+  }
+
+  .orgQuerySidebar {
+    top: 126px;
+    left: 18px;
+    width: min(260px, calc(100vw - 440px));
+  }
+
+  .orgQueryPanelBody {
+    max-height: calc(100vh - 300px);
   }
 
   .orgSidebar {
@@ -734,6 +897,7 @@
   }
 
   .orgViewport {
+    padding-left: 250px;
     padding-right: 260px;
   }
 
@@ -766,7 +930,20 @@
   }
 
   .orgViewport {
+    padding-left: 18px;
     padding-right: 18px;
+  }
+
+  .orgQuerySidebar {
+    position: fixed;
+    top: 86px;
+    left: 14px;
+    width: min(320px, calc(100vw - 28px));
+    max-height: 38vh;
+  }
+
+  .orgQueryPanelBody {
+    max-height: calc(38vh - 108px);
   }
 
   .orgTreeWrap {
